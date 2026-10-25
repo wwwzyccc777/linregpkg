@@ -2,9 +2,9 @@ name: R CMD check
 
 on:
   push:
-    branches: [master]
+    branches: [main, master]
   pull_request:
-    branches: [master]
+    branches: [main, master]
 
 permissions:
   contents: read
@@ -33,3 +33,4 @@ jobs:
           needs: check
 
       - uses: r-lib/actions/check-r-package@v2
+
