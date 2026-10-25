@@ -1,7 +1,7 @@
 # linregpkg
 
 <!-- badges: start -->
-[![R CMD check](https://github.com/Tvths/linregpkg/actions/workflows/r.yml/badge.svg)](https://github.com/Tvths/linregpkg/actions/workflows/r.yml)
+[![R CMD check](https://github.com/wwwzyccc777/linregpkg/actions/workflows/r.yml/badge.svg)](https://github.com/wwwzyccc777/linregpkg/actions/workflows/r.yml)
 <!-- badges: end -->
 
 `linregpkg` is an R package for fitting multiple linear regression models.
@@ -18,7 +18,7 @@ Install the development version from GitHub with:
 
 ``` r
 # install.packages("devtools")
-devtools::install_github("Tvths/linregpkg", build_vignettes = TRUE)
+devtools::install_github("wwwzyccc777/linregpkg", build_vignettes = TRUE)
 ```
 
 ## Usage
@@ -106,4 +106,3 @@ browseVignettes("linregpkg") to open both package vignettes.
 ## License
 
 MIT © linregpkg authors
-

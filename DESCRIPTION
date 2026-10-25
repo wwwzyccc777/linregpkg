@@ -15,8 +15,8 @@ Description: Fits linear and ridge regression models using QR decompositions.
     dplyr-based airport-delay visualization. Developed for the course 732A94
     Advanced R Programming at Linkoping University.
 License: MIT + file LICENSE
-URL: https://github.com/Tvths/linregpkg
-BugReports: https://github.com/Tvths/linregpkg/issues
+URL: https://github.com/wwwzyccc777/linregpkg
+BugReports: https://github.com/wwwzyccc777/linregpkg/issues
 Depends:
     R (>= 3.5.0)
 Imports:
