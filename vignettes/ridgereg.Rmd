@@ -1,0 +1,210 @@
+---
+title: "Ridge regression with caret"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Ridge regression with caret}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(linregpkg)
+library(caret)
+library(mlbench)
+```
+
+This vignette uses the BostonHousing data to compare ordinary linear
+regression, forward selection, and ridge regression. The same training/test
+split is used for each method. Ridge tuning is performed by 10-fold
+cross-validation on the training set.
+
+## Split the data
+
+```{r data-split}
+data("BostonHousing", package = "mlbench")
+housing <- BostonHousing
+
+set.seed(20261025)
+train_rows <- caret::createDataPartition(
+  housing$medv,
+  p = 0.8,
+  list = FALSE
+)
+training <- housing[train_rows, , drop = FALSE]
+testing <- housing[-train_rows, , drop = FALSE]
+predictor_names <- setdiff(names(housing), "medv")
+
+c(training_rows = nrow(training), test_rows = nrow(testing))
+```
+
+The split is made before fitting any model. Model selection and tuning use
+only the training rows; the test rows are held back for the final comparison.
+
+## Linear regression and forward selection
+
+The first model uses every predictor. The second starts with the intercept
+and uses forward AIC selection with the full model as its upper scope. This
+lets the search consider models containing zero through all predictors.
+
+```{r fit-linear-models}
+linear_fit <- stats::lm(medv ~ ., data = training)
+
+upper_scope <- stats::reformulate(predictor_names, response = "medv")
+forward_fit <- stats::step(
+  stats::lm(medv ~ 1, data = training),
+  direction = "forward",
+  scope = list(
+    lower = stats::as.formula("medv ~ 1"),
+    upper = upper_scope
+  ),
+  trace = 0
+)
+
+length(attr(stats::terms(forward_fit), "term.labels"))
+```
+
+We report the training RMSE and R-squared for both models.
+
+```{r training-metrics}
+rmse <- function(actual, predicted) {
+  sqrt(mean((actual - predicted)^2))
+}
+
+r_squared <- function(actual, predicted) {
+  1 - sum((actual - predicted)^2) /
+    sum((actual - mean(actual))^2)
+}
+
+training_performance <- data.frame(
+  model = c("Linear regression", "Forward selection"),
+  RMSE = c(
+    rmse(training$medv, stats::predict(linear_fit, newdata = training)),
+    rmse(training$medv, stats::predict(forward_fit, newdata = training))
+  ),
+  R_squared = c(
+    r_squared(training$medv, stats::predict(linear_fit, newdata = training)),
+    r_squared(training$medv, stats::predict(forward_fit, newdata = training))
+  )
+)
+training_performance
+```
+
+## Tune ridge regression with caret
+
+The custom caret model below delegates each fit to ridgereg. The package
+centers and scales predictors, leaves the intercept unpenalized, and solves
+the augmented least-squares problem using QR decomposition.
+
+```{r caret-ridge-model}
+ridge_model <- list(
+  label = "QR Ridge Regression",
+  library = "linregpkg",
+  type = "Regression",
+  parameters = data.frame(
+    parameter = "lambda",
+    class = "numeric",
+    label = "lambda"
+  ),
+  grid = function(x, y, len = NULL, search = "grid") {
+    if (is.null(len)) {
+      len <- 15
+    }
+    if (search == "grid") {
+      data.frame(lambda = 10^seq(-3, 3, length.out = len))
+    } else {
+      data.frame(lambda = 10^stats::runif(len, min = -3, max = 3))
+    }
+  },
+  fit = function(x, y, wts, param, lev, last, classProbs, ...) {
+    x <- as.data.frame(x, check.names = FALSE)
+    response_name <- ".ridge_response"
+    while (response_name %in% names(x)) {
+      response_name <- paste0(response_name, "_")
+    }
+    x[[response_name]] <- as.numeric(y)
+    formula <- stats::reformulate(".", response = response_name)
+    linregpkg::ridgereg(formula, data = x, lambda = param$lambda)
+  },
+  predict = function(modelFit, newdata, preProc = NULL, submodels = NULL) {
+    stats::predict(modelFit, newdata = as.data.frame(newdata))
+  },
+  prob = NULL,
+  sort = function(x) x[order(x$lambda), ]
+)
+
+ridge_grid <- expand.grid(lambda = 10^seq(-3, 3, length.out = 19))
+ridge_control <- caret::trainControl(method = "cv", number = 10)
+
+set.seed(20261025)
+ridge_fit <- caret::train(
+  x = training[, predictor_names, drop = FALSE],
+  y = training$medv,
+  method = ridge_model,
+  trControl = ridge_control,
+  tuneGrid = ridge_grid,
+  metric = "RMSE"
+)
+
+ridge_fit$bestTune
+ridge_fit$results
+```
+
+The selected value of lambda is chosen by the lowest mean 10-fold
+cross-validation RMSE. The final ridge model is then refit by caret on the
+complete training set.
+
+```{r ridge-training-performance}
+ridge_training_prediction <- stats::predict(ridge_fit, newdata = training)
+ridge_training_performance <- data.frame(
+  model = "Ridge regression",
+  RMSE = rmse(training$medv, ridge_training_prediction),
+  R_squared = r_squared(training$medv, ridge_training_prediction)
+)
+
+rbind(training_performance, ridge_training_performance)
+```
+
+## Compare all models on the test set
+
+```{r test-performance}
+test_predictions <- list(
+  "Linear regression" =
+    stats::predict(linear_fit, newdata = testing),
+  "Forward selection" =
+    stats::predict(forward_fit, newdata = testing),
+  "Ridge regression" =
+    stats::predict(ridge_fit, newdata = testing)
+)
+
+test_performance <- data.frame(
+  model = names(test_predictions),
+  RMSE = vapply(test_predictions, function(prediction) {
+    rmse(testing$medv, prediction)
+  }, numeric(1)),
+  R_squared = vapply(test_predictions, function(prediction) {
+    r_squared(testing$medv, prediction)
+  }, numeric(1)),
+  row.names = NULL
+)
+test_performance
+```
+
+## Conclusion
+
+The table reports the held-out test performance for all three models. The
+following conclusion is generated from this split rather than assuming that a
+particular model must always win:
+
+```{r conclusion}
+best_model <- test_performance$model[which.min(test_performance$RMSE)]
+cat(
+  "For this random split,",
+  best_model,
+  "has the smallest test RMSE:",
+  round(min(test_performance$RMSE), 3),
+  ". The selected ridge penalty was",
+  ridge_fit$bestTune$lambda,
+  "."
+)
+```
